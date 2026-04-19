@@ -4,8 +4,8 @@
 #
 # Purpose:
 #  - Provide consistent, color-coded terminal output
-#  - Separate neutrual progress message for check/result messages
-#  - keep loggin simple and resuable across many projects
+#  - Separate neutral progress messages from check/result messages
+#  - Keep logging simple and reusable across many projects
 #
 # Design:
 #  - Use step/info for general workflow output
@@ -15,26 +15,27 @@
 # Author:
 #  - Jared Husson
 #
-#   ===============================================================
-#   Color Initialization
-#   ===============================================================
+# ================================================================================
+# Color Initialization
+# ================================================================================
 #
 # init_colors
 # Description:
-#   Initalizes ANSI color variables when running in a terminal.
+#  - Initializes ANSI color variables when running in a terminal.
 #
 # Preconditions:
 #  - None
 #
 # Postconditions:
 #  - Color variables are set
-#  - Colors are disabled automaticallu for non-interactive output
+#  - Colors are disabled automatically for non-interactive output
 #
 # Returns:
-# - 0
+#  - 0
 #
 # Notes:
 #  - This function is intended to be called once when the file is sourced.
+#
 init_colors() {
 	if [[ -t 1 ]]; then
 		RED="\033[0;31m"
@@ -55,9 +56,9 @@ init_colors() {
 	fi
 }
 
-# =================================================================================
+# ================================================================================
 # General output helpers
-# =================================================================================
+# ================================================================================
 #
 # step
 # Description:
@@ -100,19 +101,22 @@ info() {
 	echo -e "${BLUE}[INFO]${NC} $*"
 }
 
-# =================================================================================
+# ================================================================================
 # Check/result output helpers
-# =================================================================================
+# ================================================================================
 #
 # pass
 # Description:
-# - Prints a successful check/result message.
+#  - Prints a successful check/result message.
 #
 # Preconditions:
-#  - Accepts one or more arguments as the displayed message.
+#  - Accepts one or more arguments as the displayed message
 #
 # Postconditions:
 #  - A formatted PASS line is written to stdout
+#
+# Returns:
+#  - 0
 #
 # Notes:
 #  - Use when a validation or verification step succeeds.
@@ -121,12 +125,32 @@ pass() {
 	echo -e "${GREEN}[PASS]${NC} $*"
 }
 
-# fail
+# warn
 # Description:
-# - Prints a failure message for a failed check or operation.
+#  - Prints a warning message for a non-fatal issue or threshold condition.
 #
 # Preconditions:
-#  - Accepts one or more arguments as the displayed message.
+#  - Accepts one or more arguments as the displayed message
+#
+# Postconditions:
+#  - A formatted WARN line is written to stdout
+#
+# Returns:
+#  - 0
+#
+# Notes:
+#  - Use when something needs attention but the script can continue.
+#
+warn() {
+	echo -e "${YELLOW}[WARN]${NC} $*"
+}
+
+# fail
+# Description:
+#  - Prints a failure message for a failed check or operation.
+#
+# Preconditions:
+#  - Accepts one or more arguments as the displayed message
 #
 # Postconditions:
 #  - A formatted FAIL line is written to stdout
@@ -135,7 +159,7 @@ pass() {
 #  - 0
 #
 # Notes:
-#  - This function only prints a failure message. 
+#  - This function only prints a failure message.
 #  - It does not exit the script.
 #
 fail() {
@@ -147,10 +171,10 @@ fail() {
 #  - Prints a failure message and terminates the current script.
 #
 # Preconditions:
-#  - Accepts one or more arguments as the displayed message.
-# 
+#  - Accepts one or more arguments as the displayed message
+#
 # Postconditions:
-#  - A fail line is printed
+#  - A FAIL line is printed
 #  - The script exits with status code 1
 #
 # Returns:
@@ -164,8 +188,8 @@ die() {
 	exit 1
 }
 
-# =================================================================================
+# ================================================================================
 # Initialization
-# =================================================================================
+# ================================================================================
 
 init_colors
