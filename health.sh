@@ -5,6 +5,7 @@
 # Purpose:
 #  - Provide reusable system health checks
 #  - Report disk, memory, and CPU/load conditions consistently
+#  - Support both runtime health validation and install-readiness checks
 #  - Use common.sh output helpers for clean check/result messaging
 #
 # Design:
@@ -85,6 +86,33 @@ _validate_load_thresholds() {
 	return 0
 }
 
+_validate_minimum_gb_thresholds() {
+	local warn_min_gb="$1"
+	local fail_min_gb="$2"
+
+	if [[ -z "$warn_min_gb" || -z "$fail_min_gb" ]]; then
+		fail "Threshold validation failed: missing warning or failure minimum"
+		return 2
+	fi
+
+	if ! _is_integer "$warn_min_gb" || ! _is_integer "$fail_min_gb"; then
+		fail "Threshold validation failed: GB minimum thresholds must be integers"
+		return 2
+	fi
+
+	if (( warn_min_gb < 0 || fail_min_gb < 0 )); then
+		fail "Threshold validation failed: GB minimum thresholds must be zero or greater"
+		return 2
+	fi
+
+	if (( warn_min_gb <= fail_min_gb )); then
+		fail "Threshold validation failed: warning minimum must be greater than failure minimum"
+		return 2
+	fi
+
+	return 0
+}
+
 # ================================================================================
 # Health check helpers
 # ================================================================================
@@ -155,6 +183,76 @@ check_disk() {
 }
 
 #
+# check_disk_free_gb
+# Description:
+#  - Checks available disk space in GB for a given mount point.
+#
+# Preconditions:
+#  - Accepts three arguments:
+#    1. mount point
+#    2. warning minimum free space in GB
+#    3. failure minimum free space in GB
+#  - The mount point must exist in df output
+#
+# Postconditions:
+#  - A formatted PASS/WARN/FAIL line is written to stdout
+#
+# Returns:
+#  - 0 if free space is at or above the warning minimum
+#  - 1 if free space is below the warning minimum but at or above the failure minimum
+#  - 2 if free space is below the failure minimum, or on invalid input/runtime error
+#
+# Notes:
+#  - Uses df -Pk so available space is read in kilobytes
+#  - Converts the available value to whole GB using integer division
+#  - Intended for install-readiness checks such as minimum free space requirements
+#
+check_disk_free_gb() {
+	local mount_point="$1"
+	local warn_min_gb="$2"
+	local fail_min_gb="$3"
+	local available_kb
+	local available_gb
+
+	if [[ -z "$mount_point" || -z "$warn_min_gb" || -z "$fail_min_gb" ]]; then
+		fail "Usage: check_disk_free_gb <mount_point> <warn_min_gb> <fail_min_gb>"
+		return 2
+	fi
+
+	if ! command -v df >/dev/null 2>&1; then
+		fail "Disk free-space check failed: df command not found"
+		return 2
+	fi
+
+	_validate_minimum_gb_thresholds "$warn_min_gb" "$fail_min_gb" || return 2
+
+	available_kb="$(df -Pk "$mount_point" 2>/dev/null | awk 'NR==2 {print $4}')"
+
+	if [[ -z "$available_kb" ]]; then
+		fail "Disk free-space check failed for ${mount_point}: unable to determine available space"
+		return 2
+	fi
+
+	if ! _is_integer "$available_kb"; then
+		fail "Disk free-space check failed for ${mount_point}: invalid available space value"
+		return 2
+	fi
+
+	available_gb=$(( available_kb / 1024 / 1024 ))
+
+	if (( available_gb < fail_min_gb )); then
+		fail "Free disk on ${mount_point} is ${available_gb}GB (minimum: ${fail_min_gb}GB)"
+		return 2
+	elif (( available_gb < warn_min_gb )); then
+		warn "Free disk on ${mount_point} is ${available_gb}GB (recommended: ${warn_min_gb}GB)"
+		return 1
+	else
+		pass "Free disk on ${mount_point} is ${available_gb}GB"
+		return 0
+	fi
+}
+
+#
 # check_memory
 # Description:
 #  - Checks memory usage percentage based on system memory statistics.
@@ -219,6 +317,74 @@ check_memory() {
 		return 1
 	else
 		pass "Memory usage is ${usage}%"
+		return 0
+	fi
+}
+
+#
+# check_memory_total_gb
+# Description:
+#  - Checks total installed system memory in GB.
+#
+# Preconditions:
+#  - Accepts two arguments:
+#    1. warning minimum total memory in GB
+#    2. failure minimum total memory in GB
+#  - free command must be available
+#
+# Postconditions:
+#  - A formatted PASS/WARN/FAIL line is written to stdout
+#
+# Returns:
+#  - 0 if total memory is at or above the warning minimum
+#  - 1 if total memory is below the warning minimum but at or above the failure minimum
+#  - 2 if total memory is below the failure minimum, or on invalid input/runtime error
+#
+# Notes:
+#  - Uses free -m and converts total memory to whole GB using integer division
+#  - Intended for install-readiness checks such as minimum VM sizing requirements
+#  - This checks total installed memory, not current memory usage
+#
+check_memory_total_gb() {
+	local warn_min_gb="$1"
+	local fail_min_gb="$2"
+	local total_mb
+	local total_gb
+
+	if [[ -z "$warn_min_gb" || -z "$fail_min_gb" ]]; then
+		fail "Usage: check_memory_total_gb <warn_min_gb> <fail_min_gb>"
+		return 2
+	fi
+
+	if ! command -v free >/dev/null 2>&1; then
+		fail "Memory capacity check failed: free command not found"
+		return 2
+	fi
+
+	_validate_minimum_gb_thresholds "$warn_min_gb" "$fail_min_gb" || return 2
+
+	total_mb="$(free -m | awk '/^Mem:/ {print $2}')"
+
+	if [[ -z "$total_mb" ]]; then
+		fail "Memory capacity check failed: unable to determine total memory"
+		return 2
+	fi
+
+	if ! _is_integer "$total_mb"; then
+		fail "Memory capacity check failed: invalid total memory value"
+		return 2
+	fi
+
+	total_gb=$(( total_mb / 1024 ))
+
+	if (( total_gb < fail_min_gb )); then
+		fail "Total memory is ${total_gb}GB (minimum: ${fail_min_gb}GB)"
+		return 2
+	elif (( total_gb < warn_min_gb )); then
+		warn "Total memory is ${total_gb}GB (recommended: ${warn_min_gb}GB)"
+		return 1
+	else
+		pass "Total memory is ${total_gb}GB"
 		return 0
 	fi
 }
